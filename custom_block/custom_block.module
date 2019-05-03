@@ -1,0 +1,895 @@
+<?php
+
+/**
+ * @file
+ * Implements the basic functionality required to create and display an entity.
+ *
+ */
+/**
+ * Shows this custom block on every page except the listed pages.
+ */
+define('CUSTOM_BLOCK_VISIBILITY_NOTLISTED', 0);
+
+/**
+ * Shows this custom block on only the listed pages.
+ */
+define('CUSTOM_BLOCK_VISIBILITY_LISTED', 1);
+
+/**
+ * Shows this custom block if the associated PHP code returns TRUE.
+ */
+define('CUSTOM_BLOCK_VISIBILITY_PHP', 2);
+/* *
+ * Implemented hook_page_build().
+ */
+
+function custom_block_page_build(&$page) {
+  $cbcs = custom_block_list();
+  custom_block_get_alter_list($cbcs);
+  if (!empty($cbcs)) {
+    foreach ($cbcs as $key => $custom_block) {
+      $file = file_load($custom_block->image);
+      $image = theme('image_style', array(
+        'style_name' => 'large',
+        'path' => $file->uri,
+        'attributes' => array('style' => 'max-width:100%;')
+        )
+      );
+      $data = '<div class="custom-block-wrapper">';
+      $data .= '<div class="custom-block-image">' . $image . '</div>';
+      $data .= '<h2>' . $custom_block->title . '</h2>';
+      $data .= '<p>' . $custom_block->description . '</p>';
+      $data .= '</div>';
+      $page[$custom_block->region]['block_content_' . $key] = array(
+        '#markup' => $data,
+      );
+    }
+  }
+}
+
+/**
+ * Return list of custom blocks.
+ * 
+ */
+function custom_block_list() {
+  $query = db_select('custom_block_entity', 'cb');
+  $query->fields('cb');
+  $results = $query->execute()->fetchAll();
+  return $results;
+}
+
+/**
+ * Implements hook_entity_info().
+ */
+function custom_block_entity_info() {
+  $info['custom_block_entity'] = array(
+    'label' => t('Custom Block Entity'),
+    'controller class' => 'CustomBlockController',
+    'base table' => 'custom_block_entity',
+    'uri callback' => 'custom_block_entity_uri',
+    'fieldable' => TRUE,
+    'entity keys' => array(
+      'id' => 'basic_id',
+      'bundle' => 'bundle_type',
+    ),
+    'bundle keys' => array(
+      'bundle' => 'bundle_type',
+    ),
+    'static cache' => TRUE,
+    'bundles' => array(
+      'custom_block_bundle' => array(
+        'label' => 'First custom block  bundle',
+        'admin' => array(
+          'path' => 'admin/structure/custom_block_entity/manage',
+          'access arguments' => array('administer custom_block_entity entities'),
+        ),
+      ),
+    ),
+    'view modes' => array(
+      'full' => array(
+        'label' => t('Full'),
+        'custom settings' => FALSE,
+      ),
+    ),
+  );
+
+  return $info;
+}
+
+/**
+ * Fetch a basic object.
+ *
+ * @see custom_block_entity_load_multiple()
+ * @see custom_block_menu()
+ */
+function custom_block_entity_load($basic_id = NULL, $reset = FALSE) {
+  $basic_ids = (isset($basic_id) ? array($basic_id) : array());
+  $basic = custom_block_entity_load_multiple($basic_ids, array(), $reset);
+  return $basic ? reset($basic) : FALSE;
+}
+
+/**
+ * Loads multiple basic entities.
+ *
+ * We only need to pass this request along to entity_load(), which
+ * will in turn call the load() method of our entity controller class.
+ */
+function custom_block_entity_load_multiple($basic_ids = FALSE, $conditions = array(), $reset = FALSE) {
+  return entity_load('custom_block_entity', $basic_ids, $conditions, $reset);
+}
+
+/**
+ * Implements the uri callback.
+ */
+function custom_block_entity_uri($basic) {
+  return array(
+    'path' => 'entity/custom_block/basic/' . $basic->basic_id,
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function custom_block_menu() {
+  $items['entity/custom_block'] = array(
+    'title' => 'Entity Example',
+    'page callback' => 'custom_block_info_page',
+    'access arguments' => array('view any custom_block_entity entity'),
+  );
+  $items['admin/structure/custom_block_entity/manage'] = array(
+    'title' => 'Administer custom_block_entity entity type',
+    'page callback' => 'custom_block_entity_list_entities',
+    'access arguments' => array('administer custom_block_entity entities'),
+  );
+
+  $items['admin/structure/custom_block_entity/manage/add'] = array(
+    'title' => 'Add an Entity Custom Block Entity',
+    'page callback' => 'custom_block_entity_add',
+    'access arguments' => array('create custom_block_entity entities'),
+    'type' => MENU_LOCAL_ACTION,
+  );
+
+  // List of all custom_block_entity entities.
+  $items['admin/structure/custom_block_entity/manage/list'] = array(
+    'title' => 'List',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  );
+
+  $items['entity/custom_block/basic/%custom_block_entity'] = array(
+    'title callback' => 'custom_block_entity_title',
+    'title arguments' => array(3),
+    'page callback' => 'custom_block_entity_view',
+    'page arguments' => array(3),
+    'access arguments' => array('view any custom_block_entity entity'),
+  );
+
+  // 'View' tab for an individual entity page.
+  $items['entity/custom_block/basic/%custom_block_entity/view'] = array(
+    'title' => 'View',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+
+  // 'Edit' tab for an individual entity page.
+  $items['entity/custom_block/basic/%custom_block_entity/edit'] = array(
+    'title' => 'Edit',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('custom_block_entity_form', 3),
+    'access arguments' => array('edit any custom_block_entity entity'),
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  // Add custom block entities.
+  $items['entity/custom_block/basic/add'] = array(
+    'title' => 'Add an Entity Custom Block Entity',
+    'page callback' => 'custom_block_entity_add',
+    'access arguments' => array('create custom_block_entity entities'),
+  );
+
+  return $items;
+}
+
+/**
+ * Basic information for the page.
+ */
+function custom_block_info_page() {
+  $content['preface'] = array(
+    '#type' => 'item',
+    '#markup' => t('The entity custom block provides a simple custom block entity.'),
+  );
+  if (user_access('administer custom_block_entity entities')) {
+    $content['preface']['#markup'] = t('You can administer these and add fields and change the view !link.', array('!link' => l(t('here'), 'admin/structure/custom_block_entity/manage'))
+    );
+  }
+  $content['table'] = custom_block_entity_list_entities();
+
+  return $content;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function custom_block_permission() {
+  $permissions = array(
+    'administer custom_block_entity entities' => array(
+      'title' => t('Administer custom_block_entity entities'),
+    ),
+    'view any custom_block_entity entity' => array(
+      'title' => t('View any Entity Custom Block entity'),
+    ),
+    'edit any custom_block_entity entity' => array(
+      'title' => t('Edit any Entity Custom Block entity'),
+    ),
+    'create custom_block_entity entities' => array(
+      'title' => t('Create Entity Custom Block Entities'),
+    ),
+  );
+  return $permissions;
+}
+
+/**
+ * Returns a render array with all custom_block_entity entities.
+ */
+function custom_block_entity_list_entities() {
+  $content = array();
+  // Load all of our entities.
+  $entities = custom_block_entity_load_multiple();
+  if (!empty($entities)) {
+    foreach ($entities as $entity) {
+      // Create tabular rows for our entities.
+      $rows[] = array(
+        'data' => array(
+          'id' => $entity->basic_id,
+          'title' => l($entity->title, 'entity/custom_block/basic/' . $entity->basic_id),
+          'bundle' => $entity->bundle_type,
+          'region' => $entity->region,
+        ),
+      );
+    }
+    // Put our entities into a themed table. See theme_table() for details.
+    $content['entity_table'] = array(
+      '#theme' => 'table',
+      '#rows' => $rows,
+      '#header' => array(t('ID'), t('Title'), t('Bundle'), t('Region')),
+    );
+  }
+  else {
+    // There were no entities. Tell the user.
+    $content[] = array(
+      '#type' => 'item',
+      '#markup' => t('No custom_block_entity entities currently exist.'),
+    );
+  }
+  return $content;
+}
+
+/**
+ * Callback for a page title when this entity is displayed.
+ */
+function custom_block_entity_title($entity) {
+  return t('Entity Custom Block (title=@title)', array('@title' => $entity->title));
+}
+
+/**
+ * Menu callback to display an entity.
+ *
+ * @see hook_entity_prepare_view()
+ * @see hook_entity_view()
+ * @see hook_entity_view_alter()
+ */
+function custom_block_entity_view($entity, $view_mode = 'full') {
+  $entity_type = 'custom_block_entity';
+  if ($entity->basic_id) {
+    $entity->content = array(
+      '#view_mode' => $view_mode,
+    );
+    field_attach_prepare_view($entity_type, array($entity->basic_id => $entity), $view_mode);
+    entity_prepare_view($entity_type, array($entity->basic_id => $entity));
+    $entity->content += field_attach_view($entity_type, $entity, $view_mode);
+    $entity->content['created'] = array(
+      '#type' => 'item',
+      '#title' => t('Created date'),
+      '#markup' => format_date($entity->created),
+    );
+    $entity->content['title'] = array(
+      '#type' => 'item',
+      '#title' => t('Title'),
+      '#markup' => $entity->title,
+    );
+    $entity->content['description'] = array(
+      '#type' => 'item',
+      '#title' => t('Description'),
+      '#markup' => $entity->description,
+    );
+    $file = file_load($entity->image);
+    $entity->content['image'] = array(
+      '#type' => 'item',
+      '#title' => t('Image'),
+      '#theme' => 'image_style',
+      '#style_name' => 'large',
+      '#path' => $file->uri,
+    );
+    $entity->content['region'] = array(
+      '#type' => 'item',
+      '#title' => t('Region'),
+      '#markup' => $entity->region,
+    );
+    //global $language;
+    //$langcode = $language->language;
+    // And now invoke hook_entity_view().
+    //module_invoke_all('entity_view', $entity, $entity_type, $view_mode, $langcode);
+    //drupal_alter(array('custom_block_entity_view', 'entity_view'), $entity->content, $entity_type);
+    // And finally return the content.
+    return $entity->content;
+  }
+}
+
+/**
+ * Implements hook_field_extra_fields().
+ */
+function custom_block_field_extra_fields() {
+  $form_elements['title'] = array(
+    'label' => t('Title'),
+    'description' => t('Title of the custom block'),
+    'weight' => 0,
+  );
+  $form_elements['description'] = array(
+    'label' => t('Description'),
+    'description' => t('Description of the custom block'),
+    'weight' => 1,
+  );
+  $form_elements['image'] = array(
+    'label' => t('Image'),
+    'description' => t('Image of the custom block'),
+    'weight' => 2,
+  );
+  $form_elements['region'] = array(
+    'label' => t('Region'),
+    'description' => t('Region of the custom block'),
+    'weight' => 3,
+  );
+  $display_elements['created'] = array(
+    'label' => t('Creation date'),
+    'description' => t('Creation date (an extra display field)'),
+    'weight' => 5,
+  );
+  $display_elements['title'] = array(
+    'label' => t('Title'),
+    'description' => t('Title of the custom block'),
+    'weight' => 1,
+  );
+  $display_elements['description'] = array(
+    'label' => t('Description'),
+    'description' => t('Description of the custom block'),
+    'weight' => 2,
+  );
+  $display_elements['image'] = array(
+    'label' => t('Image'),
+    'description' => t('Image of the custom block'),
+    'weight' => 3,
+  );
+  $display_elements['region'] = array(
+    'label' => t('Region'),
+    'description' => t('Region of the custom block'),
+    'weight' => 4,
+  );
+
+  // Since we have only one bundle type, we'll just provide the extra_fields
+  // for it here.
+  $extra_fields['custom_block_entity']['custom_block_bundle']['form'] = $form_elements;
+  $extra_fields['custom_block_entity']['custom_block_bundle']['display'] = $display_elements;
+
+  return $extra_fields;
+}
+
+/**
+ * Provides a wrapper on the edit form to add a new entity.
+ */
+function custom_block_entity_add() {
+  $entity = entity_get_controller('custom_block_entity')->create();
+  return drupal_get_form('custom_block_entity_form', $entity);
+}
+
+/**
+ * Form function to create an custom_block_entity entity.
+ *
+ * The pattern is:
+ * - Set up the form for the data that is specific to your
+ *   entity: the columns of your base table.
+ * - Call on the Field API to pull in the form elements
+ *   for fields attached to the entity.
+ */
+function custom_block_entity_form($form, &$form_state, $entity) {
+  $form['title'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Title'),
+    '#required' => TRUE,
+    '#default_value' => $entity->title,
+    '#weight' => 0,
+  );
+  $form['description'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Item Description'),
+    '#required' => TRUE,
+    '#default_value' => $entity->description,
+    '#weight' => 1,
+  );
+  $form['image'] = array(
+    '#title' => t('Image'),
+    '#type' => 'managed_file',
+    '#description' => t('The uploaded image will be displayed on this page using the image style choosen below.'),
+    '#default_value' => $entity->image,
+    '#upload_location' => 'public://custom_block_images/',
+    '#required' => TRUE,
+    '#weight' => 2,
+  );
+  // Region settings.
+  $form['regions'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Region settings'),
+    '#collapsible' => FALSE,
+    '#description' => t('Specify in which themes and regions this block is displayed.'),
+    '#weight' => 2,
+  );
+
+  $theme_default = variable_get('theme_default', 'bartik');
+  $form['regions']['region'] = array(
+    '#type' => 'select',
+    '#title' => $theme_default . t(' (default theme)'),
+    '#default_value' => $entity->region,
+    '#empty_value' => BLOCK_REGION_NONE,
+    '#options' => system_region_list($theme_default, REGIONS_VISIBLE),
+    '#weight' => 4,
+  );
+  // Visibility settings.
+  $form['visibility_title'] = array(
+    '#type' => 'item',
+    '#title' => t('Visibility settings'),
+    '#weight' => 5,
+  );
+  $form['visibility'] = array(
+    '#type' => 'vertical_tabs',
+    '#attached' => array(
+      'js' => array(drupal_get_path('module', 'custom_block') . '/custom_block.js'),
+    ),
+    '#weight' => 6,
+  );
+  // Per-path visibility.
+  $form['visibility']['path'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Pages'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    '#group' => 'visibility',
+    '#weight' => 7,
+  );
+  $access = user_access('use PHP for settings');
+  if (isset($cbc->visibility) && $cbc->visibility == CUSTOM_BLOCK_VISIBILITY_PHP && !$access) {
+    $form['visibility']['path']['visibility'] = array(
+      '#type' => 'value',
+      '#value' => CUSTOM_BLOCK_VISIBILITY_PHP,
+    );
+    $form['visibility']['path']['pages'] = array(
+      '#type' => 'value',
+      '#value' => $entity->pages,
+    );
+  }
+  else {
+    $options = array(
+      CUSTOM_BLOCK_VISIBILITY_NOTLISTED => t('All pages except those listed'),
+      CUSTOM_BLOCK_VISIBILITY_LISTED => t('Only the listed pages'),
+    );
+    $description = t("Specify pages by using their paths. Enter one path per line. The '*' character is a wildcard. Example paths are %blog for the blog page and %blog-wildcard for every personal blog. %front is the front page.", array(
+      '%blog' => 'blog',
+      '%blog-wildcard' => 'blog/*',
+      '%front' => '<front>',
+      )
+    );
+    if (module_exists('php') && $access) {
+      $options += array(CUSTOM_BLOCK_VISIBILITY_PHP => t('Pages on which this PHP code returns <code>TRUE</code> (experts only)'));
+      $title = t('Pages or PHP code');
+      $description .= ' ' . t('If the PHP option is chosen, enter PHP code between %php. Note that executing incorrect PHP code can break your Drupal site.', array('%php' => '<?php ?>'));
+    }
+    else {
+      $title = t('Pages');
+    }
+    $form['visibility']['path']['visibility'] = array(
+      '#type' => 'radios',
+      '#title' => t('Show custom block on specific pages'),
+      '#options' => $options,
+      '#default_value' => ($entity->visibility) ? $entity->visibility : CUSTOM_BLOCK_VISIBILITY_NOTLISTED,
+    );
+    $form['visibility']['path']['pages'] = array(
+      '#type' => 'textarea',
+      '#title' => '<span class="element-invisible">' . $title . '</span>',
+      '#default_value' => $entity->pages,
+      '#description' => $description,
+    );
+  }
+  // Per-role visibility.
+  $default_role_options = array();
+  if ($entity->basic_id) {
+    $default_role_options = custom_block_role_load($entity->basic_id);
+  }
+  $role_options = array_map('check_plain', user_roles());
+  $form['visibility']['role'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Roles'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    '#group' => 'visibility',
+    '#weight' => 10,
+  );
+  $form['visibility']['role']['roles'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('Show custom block for specific roles'),
+    '#default_value' => $default_role_options,
+    '#options' => $role_options,
+    '#description' => t('Show custom block only for the selected role(s). If you select no roles, the custom block  will be visible to all users.'),
+  );
+
+  $form['visibility']['ip_address'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('IP Address'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    '#group' => 'visibility',
+    '#weight' => 11,
+  );
+  $form['visibility']['ip_address']['ipaddress'] = array(
+    '#type' => 'textarea',
+    '#title' => t('IP Address'),
+    '#default_value' => $entity->ipaddress,
+    '#description' => t('Enter one IP Address per line. An example IP Address for localhost is <em>127.0.0.1</em>.'),
+  );
+  $form['visibility']['ip_address']['nigate_ip'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Negate the condition'),
+    '#default_value' => $entity->nigate_ip,
+  );
+
+
+  $form['basic_entity'] = array(
+    '#type' => 'value',
+    '#value' => $entity,
+  );
+
+  field_attach_form('custom_block_entity', $entity, $form, $form_state);
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+    '#weight' => 100,
+  );
+  $form['delete'] = array(
+    '#type' => 'submit',
+    '#value' => t('Delete'),
+    '#submit' => array('custom_block_entity_edit_delete'),
+    '#weight' => 200,
+  );
+
+  return $form;
+}
+
+/**
+ * Loads a custom block role from the database.
+ *
+ * @param int $basic_id
+ *   Unique ID of the custom block.
+ *
+ * @return array
+ *   A custom block role column.
+ */
+function custom_block_role_load($basic_id) {
+  if (isset($basic_id)) {
+    $query = db_select('custom_block_role', 'cbcr');
+    $query->fields('cbcr', array('rid'));
+    $query->condition('cbcr.basic_id', $basic_id);
+    $cbc = $query->execute()->fetchCol();
+  }
+  if (empty($cbc)) {
+    $cbc = array();
+  }
+
+  return $cbc;
+}
+
+/**
+ * Validation handler for custom_block_entity_add_form form.
+ *
+ * We pass things straight through to the Field API to handle validation
+ * of the attached fields.
+ */
+function custom_block_entity_form_validate($form, &$form_state) {
+  field_attach_form_validate('custom_block_entity', $form_state['values']['basic_entity'], $form, $form_state);
+}
+
+/**
+ * Form submit handler: Submits basic_add_form information.
+ */
+function custom_block_entity_form_submit($form, &$form_state) {
+  $entity = $form_state['values']['basic_entity'];
+  $entity->title = $form_state['values']['title'];
+  $entity->description = $form_state['values']['description'];
+  $entity->image = $form_state['values']['image'];
+  $entity->region = $form_state['values']['region'];
+  $entity->pages = trim($form_state['values']['pages']);
+  $entity->visibility = (int) $form_state['values']['visibility'];
+  $entity->ipaddress = trim($form_state['values']['ipaddress']);
+  $entity->nigate_ip = $form_state['values']['nigate_ip'];
+  field_attach_submit('custom_block_entity', $entity, $form, $form_state);
+  $entity = custom_block_entity_save($entity);
+  // Save file.
+  $file = file_load($form_state['values']['image']);
+  $file->status = FILE_STATUS_PERMANENT;
+  file_save($file);
+  file_usage_add($file, 'custom_block', 'custom_block', $entity->basic_id);
+  // First delete all entry of role based on basic_id.
+  db_delete('custom_block_role')
+    ->condition('basic_id', $entity->basic_id)
+    ->execute();
+  // Insert new roles.
+  foreach (array_filter($form_state['values']['roles']) as $rid) {
+    $cbc_role_data = array(
+      'basic_id' => $entity->basic_id,
+      'rid' => $rid,
+    );
+    drupal_write_record('custom_block_role', $cbc_role_data);
+  }
+
+  $form_state['redirect'] = 'entity/custom_block/basic/' . $entity->basic_id;
+}
+
+/**
+ * Form deletion handler.
+ *
+ * @todo: 'Are you sure?' message.
+ */
+function custom_block_entity_edit_delete($form, &$form_state) {
+  $entity = $form_state['values']['basic_entity'];
+  custom_block_entity_delete($entity);
+  drupal_set_message(t('The entity %title (ID %id) has been deleted', array('%title' => $entity->title, '%id' => $entity->basic_id))
+  );
+  $form_state['redirect'] = 'entity/custom_block';
+}
+
+/**
+ * We save the entity by calling the controller.
+ */
+function custom_block_entity_save(&$entity) {
+  return entity_get_controller('custom_block_entity')->save($entity);
+}
+
+/**
+ * Use the controller to delete the entity.
+ */
+function custom_block_entity_delete($entity) {
+  entity_get_controller('custom_block_entity')->delete($entity);
+}
+
+/**
+ * CustomBlockControllerInterface definition.
+ *
+ * @see hook_entity_info_alter()
+ */
+interface CustomBlockControllerInterface
+extends DrupalEntityControllerInterface {
+
+  /**
+   * Create an entity.
+   */
+  public function create();
+
+  /**
+   * Save an entity.
+   *
+   * @param object $entity
+   *   The entity to save.
+   */
+  public function save($entity);
+
+  /**
+   * Delete an entity.
+   *
+   * @param object $entity
+   *   The entity to delete.
+   */
+  public function delete($entity);
+}
+
+/**
+ * CustomBlockController extends DrupalDefaultEntityController.
+ *
+ * Our subclass of DrupalDefaultEntityController lets us add a few
+ * important create, update, and delete methods.
+ */
+class CustomBlockController extends DrupalDefaultEntityController implements CustomBlockControllerInterface {
+
+  /**
+   * Create and return a new custom_block_entity entity.
+   */
+  public function create() {
+    $entity = new stdClass();
+    $entity->type = 'custom_block_entity';
+    $entity->basic_id = 0;
+    $entity->bundle_type = 'custom_block_bundle';
+    $entity->title = '';
+    $entity->description = '';
+    $entity->image = '';
+    $entity->region = '';
+    $entity->visibility = '';
+    $entity->ipaddress = '';
+    $entity->pages = '';
+    $entity->nigate_ip = 0;
+    return $entity;
+  }
+
+  /**
+   * Saves the custom fields using drupal_write_record().
+   */
+  public function save($entity) {
+    if (empty($entity->basic_id)) {
+      $entity->created = time();
+    }
+    // Invoke hook_entity_presave().
+    module_invoke_all('entity_presave', $entity, 'custom_block_entity');
+    $primary_keys = $entity->basic_id ? 'basic_id' : array();
+    drupal_write_record('custom_block_entity', $entity, $primary_keys);
+    $invocation = 'entity_insert';
+    if (empty($primary_keys)) {
+      field_attach_insert('custom_block_entity', $entity);
+    }
+    else {
+      field_attach_update('custom_block_entity', $entity);
+      $invocation = 'entity_update';
+    }
+    // Invoke either hook_entity_update() or hook_entity_insert().
+    module_invoke_all($invocation, $entity, 'custom_block_entity');
+    return $entity;
+  }
+
+  /**
+   * Delete a single entity.
+   *
+   * Really a convenience function for deleteMultiple().
+   */
+  public function delete($entity) {
+    $this->deleteMultiple(array($entity));
+  }
+
+  /**
+   * Delete one or more custom_block_entity entities.
+   *
+   * Deletion is unfortunately not supported in the base
+   * DrupalDefaultEntityController class.
+   *
+   * @param array $entities
+   *   An array of entity IDs or a single numeric ID.
+   */
+  public function deleteMultiple($entities) {
+    $basic_ids = array();
+    if (!empty($entities)) {
+      $transaction = db_transaction();
+      try {
+        foreach ($entities as $entity) {
+          // Invoke hook_entity_delete().
+          module_invoke_all('entity_delete', $entity, 'custom_block_entity');
+          field_attach_delete('custom_block_entity', $entity);
+          $basic_ids[] = $entity->basic_id;
+        }
+        db_delete('custom_block_entity')
+          ->condition('basic_id', $basic_ids, 'IN')
+          ->execute();
+      }
+      catch (Exception $e) {
+        $transaction->rollback();
+        watchdog_exception('custom_block', $e);
+        throw $e;
+      }
+    }
+  }
+
+}
+
+/**
+ * Checks the page, user role, settings.
+ *
+ * Removes the custom block if the visibility conditions are not met.
+ */
+function custom_block_get_alter_list(&$cbcs) {
+  global $user;
+
+  // Build an array of roles for each custom block.
+  $cbc_roles = array();
+  $query = db_select('custom_block_role', 'cbcr');
+  $query->fields('cbcr');
+  $results = $query->execute()->fetchAll();
+  foreach ($results as $record) {
+    $cbc_roles[$record->basic_id][] = $record->rid;
+  }
+
+  foreach ($cbcs as $key => $cbc) {
+
+    // If a CBC has no roles associated, it is displayed for every role.
+    // For CBCs with roles associated, if none of the user's roles matches
+    // the settings from this CBC, remove it from the CBC list.
+    if (isset($cbc_roles[$cbc->basic_id]) && !array_intersect($cbc_roles[$cbc->basic_id], array_keys($user->roles))) {
+      // No match.
+      unset($cbcs[$key]);
+      continue;
+    }
+    $enabled = TRUE;
+    // Limited visibility custom block must list at least one page.
+    if ($cbc->visibility == CUSTOM_BLOCK_VISIBILITY_LISTED && empty($cbc->pages)) {
+      $enabled = FALSE;
+    }
+
+    if (!$enabled) {
+      unset($cbcs[$key]);
+      continue;
+    }
+
+    // Match path if necessary.
+    if ($cbc->pages) {
+      // Convert path to lowercase. This allows comparison of the same path
+      // with different case. Ex: /Page, /page, /PAGE.
+      $pages = drupal_strtolower($cbc->pages);
+      if ($cbc->visibility < CUSTOM_BLOCK_VISIBILITY_PHP) {
+        // Convert the Drupal path to lowercase.
+        $path = drupal_strtolower(drupal_get_path_alias(current_path()));
+        // Compare the lowercase internal and lowercase path alias (if any).
+        $page_match = drupal_match_path($path, $pages);
+        if ($path != current_path()) {
+          $page_match = $page_match || drupal_match_path(current_path(), $pages);
+        }
+        // When $cbc->visibility has a value of 0
+        // (CUSTOM_BLOCK_VISIBILITY_NOTLISTED), the custom block is displayed on
+        // all pages except those listed in $cbc->pages. When set to 1
+        // (CUSTOM_BLOCK_VISIBILITY_LISTED), it is displayed only on
+        // those pages listed in $cbc->pages.
+        $page_match = !($cbc->visibility xor $page_match);
+      }
+      elseif (module_exists('php')) {
+        $page_match = php_eval($cbc->pages);
+      }
+      else {
+        $page_match = FALSE;
+      }
+    }
+    else {
+      $page_match = TRUE;
+    }
+    if (!$page_match) {
+      unset($cbcs[$key]);
+    }
+    if ($cbc->ipaddress) {
+      $ip_addresses = trim($cbc->ipaddress);
+      $ip_addresses = preg_replace('/(\/\/|#).+/', '', $ip_addresses);
+      $ip_addresses = preg_replace('~/\*([^*]|[\r\n]|(\*+([^*/]|[\r\n])))*\*+/~', '', $ip_addresses);
+
+      $addresses = explode(PHP_EOL, $ip_addresses);
+      $ips = array();
+      foreach ($addresses as $ip_address) {
+        $trimmed = trim($ip_address);
+        if (strlen($trimmed)) {
+          $ips[] = $trimmed;
+        }
+      }
+      $negate = $cbc->nigate_ip;
+      $ip = ip_address();
+      if ($ip == '::1') {
+        $ip = '127.0.0.1';
+      }
+      if ($negate && in_array($ip, $ips)) {
+        unset($cbcs[$key]);
+      }
+      if (!$negate && !in_array($ip, $ips)) {
+        unset($cbcs[$key]);
+      }
+    }
+  }
+}
+
+/**
+ * @} End of "defgroup custom_block".
+ */

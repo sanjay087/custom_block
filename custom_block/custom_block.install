@@ -1,0 +1,117 @@
+<?php
+
+/**
+ * @file
+ */
+
+/**
+ * Implements hook_schema().
+ *
+ * @ingroup custom_block
+ */
+function custom_block_schema() {
+  $schema = array();
+  $schema['custom_block_entity'] = array(
+    'description' => 'The base table for our basic entity.',
+    'fields' => array(
+      'basic_id' => array(
+        'description' => 'Primary key of the basic entity.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'bundle_type' => array(
+        'description' => 'The bundle type',
+        'type' => 'text',
+        'size' => 'medium',
+        'not null' => TRUE,
+      ),
+      'title' => array(
+        'description' => 'Title of the item.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'description' => array(
+        'description' => 'Description of the item.',
+        'type' => 'text',
+        'not null' => TRUE,
+        'size' => 'big',
+      ),
+      'image' => array(
+        'description' => 'File id of the item.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'region' => array(
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Theme region within which the block is set.',
+      ),
+      'visibility' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'size' => 'tiny',
+        'description' => 'Flag to indicate how to show custom block on pages. (0 = Show on all pages except listed pages, 1 = Show only on listed pages)',
+      ),
+      'pages' => array(
+        'type' => 'text',
+        'not null' => TRUE,
+        'description' => 'Contents of the "Pages" custom block; contains either a list of paths on which to include/exclude the custom block.',
+      ),
+      'ipaddress' => array(
+        'type' => 'text',
+        'not null' => TRUE,
+        'description' => 'IP address.',
+      ),
+      'nigate_ip' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'created' => array(
+        'description' => 'The Unix timestamp of the entity creation time.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('basic_id'),
+  );
+  $schema['custom_block_role'] = array(
+    'description' => 'Sets up access permissions for custom block based on user roles',
+    'fields' => array(
+      'basic_id' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => "The custom block's id.",
+      ),
+      'rid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => "The user's role ID from {users_roles}.rid.",
+      ),
+    ),
+  );
+
+  return $schema;
+}
+
+/**
+ * Implements hook_uninstall().
+ *
+ * At uninstall time we'll notify field.module that the entity was deleted
+ * so that attached fields can be cleaned up.
+ *
+ * @ingroup custom_block
+ */
+function custom_block_uninstall() {
+  field_attach_delete_bundle('custom_block_entity', 'custom_block_bundle');
+}

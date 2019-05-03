@@ -1,0 +1,6 @@
+name = Custom Block
+description = Custom blocks.
+core = 7.x
+package = Custom module
+dependencies[] = drupal:field
+configure = admin/structure/custom_block_entity/manage
