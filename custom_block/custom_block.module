@@ -435,7 +435,7 @@ function custom_block_entity_form($form, &$form_state, $entity) {
   $theme_default = variable_get('theme_default', 'bartik');
   $form['regions']['region'] = array(
     '#type' => 'select',
-    '#title' => $theme_default . t(' (default theme)'),
+    '#title' => filter_xss($theme_default) . ' ' . t('(default theme)'),
     '#default_value' => $entity->region,
     '#empty_value' => BLOCK_REGION_NONE,
     '#options' => system_region_list($theme_default, REGIONS_VISIBLE),
